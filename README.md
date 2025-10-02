@@ -4,17 +4,17 @@
 
 ---
 
-## 📂 项目结构
+## 📂 项目文件
 
 - `p2p_server22.py` —— 打洞服务端脚本,启动以打洞,部署在公网服务器上  
 - `p2p_client_s.py` —— 客户端配置文件  
 - `p2p_client.py` —— 客户端配置文件  
-- `服务端代理.py` —— 运行后会生成 `UUID` 并监听本地服务器端mc的默认25565端口,端口可自行修改
+- `服务端代理.py` —— 运行后会生成 `UUID` 并代理本地服务器端mc的默认25565端口,端口可自行修改
 - `客户端代理.py`  —— 客户端本地代理，修改对应 `UUID` 启动即可连接打洞,默认监听25566端口,可在mc多人游戏输入0.0.0.0:25566联机
 
 ---
 
-## ⚙️ 服务端配置（p2p_server22.py）
+## ⚙️ 打洞服务端（p2p_server22.py）
 
 ```python
 from socket import *
@@ -48,7 +48,7 @@ class Server:
 
 ---
 
-## ⚙️ 客户端配置1（p2p_client_s.py）
+## ⚙️ MC的服务端主要配置（p2p_client_s.py）
 
 ```python
 import traceback
@@ -78,7 +78,7 @@ SERVER_PORT = 3336   # 必须与服务端一致,修改这里
 
 ---
 
-##  ⚙️ 客户端配置2（p2p_client.py）
+##  ⚙️ MC客户端的主要配置（p2p_client.py）
 
 ```python
 import traceback
@@ -110,10 +110,30 @@ SERVER_PORT = 3336   # 与服务端端口一致,修改这里
 
 # 🔑 代理配置
 ## 服务端代理（服务端代理.py）
-
 # 运行后会生成一个 UUID，客户端需要使用此 UUID 进行连接。
 
- 客户端代理（客户端代理.py 或 local_proxy.py）
+```python
+# relay.py
+import time
+from collections import OrderedDict
+import socket
+import threading
+import struct
+import traceback
+import p2p_client_s
+
+Detection=p2p_client_s.Detection.encode("utf-8")
+p2pExample=p2p_client_s.Run()
+
+# 配置（按需修改）
+MC_SERVER_ADDR = ('127.0.0.1', 25565)  # 真实 Minecraft 服务器地址,修改这里代理不同服务器端口
+```
+
+---
+
+
+
+## 客户端代理（客户端代理.py）
 
 ```python
 from collections import OrderedDict
@@ -127,8 +147,13 @@ import p2p_client
 
 Detection = p2p_client.Detection.encode("utf-8")
 
-# 在此处修改 UUID 为服务端提供的 UUID
+# 在此处修改 UUID 为服务端代理提供的 UUID
 p2pExample = p2p_client.Run(UUID("d1585c38-8f6f-4ff6-96ee-97eb3b413619")) #修改这里
+if not p2pExample.yes:
+    quit()
+
+# 配置（按需修改）
+LOCAL_TCP_BIND = ('0.0.0.0', 25566)   # Minecraft 客户端连到这里
 
 ```
 
