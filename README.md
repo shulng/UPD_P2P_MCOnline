@@ -44,6 +44,8 @@ class Server:
         self.session_count = 0
         self.IP = "0.0.0.0"
         self.PORT = 3336   # 打洞服务器监听端口,修改这里
+```
+
 ---
 
 ## ⚙️ 客户端配置1（p2p_client_s.py）
@@ -72,6 +74,7 @@ Detection = "okgo"
 # 网络信息
 SERVER_IP = "penxia.dpdns.org"
 SERVER_PORT = 3336   # 必须与服务端一致,修改这里
+```
 
 ---
 
@@ -101,14 +104,16 @@ Detection = "okgo"
 SERVER_IP = "penxia.dpdns.org"
 SERVER_PORT = 3336   # 与服务端端口一致,修改这里
 
+```
+
 ---
 
-🔑 代理配置
-服务端代理（服务端代理.py）
+# 🔑 代理配置
+## 服务端代理（服务端代理.py）
 
-运行后会生成一个 UUID，客户端需要使用此 UUID 进行连接。
+# 运行后会生成一个 UUID，客户端需要使用此 UUID 进行连接。
 
-客户端代理（客户端代理.py 或 local_proxy.py）
+ 客户端代理（客户端代理.py 或 local_proxy.py）
 
 ```python
 from collections import OrderedDict
@@ -125,10 +130,12 @@ Detection = p2p_client.Detection.encode("utf-8")
 # 在此处修改 UUID 为服务端提供的 UUID
 p2pExample = p2p_client.Run(UUID("d1585c38-8f6f-4ff6-96ee-97eb3b413619")) #修改这里
 
+```
+
 ---
 
-👉 注意：
+## 👉 注意：
 
-UUID 需要替换为服务端生成的真实值。
+# UUID 需要替换为服务端生成的真实值。
 
-确保客户端和服务端端口一致，否则无法打洞成功。
+# 确保客户端和服务端端口一致，否则无法打洞成功。
