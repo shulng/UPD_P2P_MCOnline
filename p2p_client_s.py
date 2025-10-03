@@ -115,14 +115,15 @@ class Run:
                     self.sock.sendto(struct.pack(HEADER_FMT,TYPE_P2P,self.uuid.bytes,uuid.bytes,False), (SERVER_IP, SERVER_PORT)) #及时回复
                     Thread(target=self.server_session,args=(uuid,)).start()
                 elif data==b"":
-                    self.sock.sendto(struct.pack(HEADER_FMT, TYPE_P2P, self.uuid.bytes, b"", True),(SERVER_IP, SERVER_PORT))  # 发起新注册,回应会通过处理mc数据的recvfrom处理
-                    try:
-                        self.tcp.close()
-                    except:pass
-                    time.sleep(3)
+                    break
             except:
-                self.sock.sendto(struct.pack(HEADER_FMT, TYPE_P2P, self.uuid.bytes, b"", True),(SERVER_IP, SERVER_PORT))  # 发起新注册,回应会通过处理mc数据的recvfrom处理
-                time.sleep(3)
+                break
+        try:
+            self.tcp.close()
+        except:pass
+        self.sock.sendto(struct.pack(HEADER_FMT, TYPE_LOGOUT, self.uuid.bytes, b"", False),(SERVER_IP, SERVER_PORT))
+        print("tcp连接关闭,发送注销请求")
+        self.sock.sendto(struct.pack(HEADER_FMT, TYPE_P2P, self.uuid.bytes, b"", True), (SERVER_IP, SERVER_PORT))#发起新注册,回应会通过处理mc数据的recvfrom处理
 
 
     def server_session(self,uuid):
