@@ -24,8 +24,8 @@ SERVER_PORT = 3336
 
 
 class Run:
-    def __init__(self):
-        self.uuid=None
+    def __init__(self,uuid):
+        self.uuid=uuid
         self.sign=False
         self.info = {}
         self.yes = False #打洞是否成功
@@ -42,11 +42,12 @@ class Run:
         self.signup_server()
         self.waken_thread=Thread(target=self.waken)
         self.waken_thread.start()
-        self.client_session_thread = Thread(target=self.client_session)
-        self.client_session_thread.start()
 
 
     def uuid_init(self):
+        if self.uuid:
+            print(f"uuid已设置:{self.uuid}")
+            return
         while True:
             self.sock.sendto(struct.pack(HEADER_FMT, TYPE_GET_UUID, b"", b"", False), (SERVER_IP, SERVER_PORT))
             try:
@@ -55,35 +56,33 @@ class Run:
                 time.sleep(1)
                 continue
             self.uuid = UUID(bytes=data)
-            print(f"uuid初始化{self.uuid}")
+            print(f"uuid初始化:{self.uuid}")
             break
 
 
     def signup_server(self):
         print("开始注册")
+        self.sock.setblocking(False)  # 非阻塞模式
         while True:
-            pkg=struct.pack(HEADER_FMT,TYPE_P2P,self.uuid.bytes,b"",True)
-            self.sock.sendto(pkg,(SERVER_IP,SERVER_PORT))
+            self.sock.sendto(struct.pack(HEADER_FMT,TYPE_P2P,self.uuid.bytes,b"",True),(SERVER_IP,SERVER_PORT))
+            time.sleep(0.5)
             try:
                 data,addr=self.sock.recvfrom(1024)
             except Exception:
-                traceback.print_exc()
-                time.sleep(1)
                 print("注册失败,开始重试")
+                self.sock.setblocking(True)
                 continue
             tcpport=eval(data.decode("utf-8"))
             self.tcp=socket(AF_INET, SOCK_STREAM)
             self.tcp.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-            time.sleep(1)
             try:
-                self.tcp.connect((SERVER_IP,tcpport))
+                self.tcp.connect_ex((SERVER_IP,tcpport))
             except Exception:
-                traceback.print_exc()
                 self.sock.sendto(struct.pack(HEADER_FMT,TYPE_LOGOUT,self.uuid.bytes,b"",False), (SERVER_IP,SERVER_PORT))
-                time.sleep(1)
                 print("注册失败,端口:"+tcpport+"错误")
                 continue
             print("注册成功")
+            self.sock.setblocking(True)
             break
 
 
@@ -93,23 +92,21 @@ class Run:
         self.tcp = socket(AF_INET, SOCK_STREAM)
         self.tcp.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
         try:
-            self.tcp.connect((SERVER_IP, tcpport))
+            self.tcp.connect_ex((SERVER_IP, tcpport))
         except Exception:
             traceback.print_exc()
             self.sock.sendto(struct.pack(HEADER_FMT, TYPE_LOGOUT, self.uuid.bytes, b"", False),(SERVER_IP, SERVER_PORT))
             print("注册失败,端口:" + tcpport + "错误")
+            self.sock.sendto(struct.pack(HEADER_FMT, TYPE_P2P, self.uuid.bytes, b"", True), (SERVER_IP, SERVER_PORT))
             return
-        self.waken_thread=Thread(target=self.waken)
-        self.waken_thread.start()
         print("注册成功")
 
 
     def waken(self):
-        print("waken")
         while True:
             time.sleep(1)
             try:
-                self.tcp.settimeout(60) #发现tcp连接会莫名其妙断开而不知,设置重注册机制刷新连接
+                self.tcp.settimeout(120) #发现tcp连接会莫名其妙断开而不知,设置重注册机制刷新连接
                 data=self.tcp.recv(1024)
                 if len(data)>3:
                     uuid=UUID(bytes=data)
@@ -118,25 +115,21 @@ class Run:
                     self.sock.sendto(struct.pack(HEADER_FMT,TYPE_P2P,self.uuid.bytes,uuid.bytes,False), (SERVER_IP, SERVER_PORT)) #及时回复
                     Thread(target=self.server_session,args=(uuid,)).start()
                 elif data==b"":
-                    break
+                    self.sock.sendto(struct.pack(HEADER_FMT, TYPE_P2P, self.uuid.bytes, b"", True),(SERVER_IP, SERVER_PORT))  # 发起新注册,回应会通过处理mc数据的recvfrom处理
+                    try:
+                        self.tcp.close()
+                    except:pass
+                    time.sleep(3)
             except:
-                break
-        try:
-            self.tcp.close()
-        except:pass
-        self.sock.sendto(struct.pack(HEADER_FMT, TYPE_LOGOUT, self.uuid.bytes, b"", False),(SERVER_IP, SERVER_PORT))
-        print("tcp连接关闭,发送注销请求")
-        self.sock.sendto(struct.pack(HEADER_FMT, TYPE_P2P, self.uuid.bytes, b"", True), (SERVER_IP, SERVER_PORT))#发起新注册,回应会通过处理mc数据的recvfrom处理
+                self.sock.sendto(struct.pack(HEADER_FMT, TYPE_P2P, self.uuid.bytes, b"", True),(SERVER_IP, SERVER_PORT))  # 发起新注册,回应会通过处理mc数据的recvfrom处理
+                time.sleep(3)
 
 
     def server_session(self,uuid):
-        print("server_session")
         while not self.yes:
             self.sock.sendto(struct.pack(HEADER_FMT,TYPE_P2P,self.uuid.bytes,uuid.bytes,False), (SERVER_IP, SERVER_PORT))
             time.sleep(1)  # 向服务器发送维持包
         self.sock.sendto(struct.pack(HEADER_FMT, TYPE_CLOSE, self.uuid.bytes, uuid.bytes, False),(SERVER_IP, SERVER_PORT))
-        time.sleep(0.1)
-        self.sock.sendto(struct.pack(HEADER_FMT, TYPE_CLOSE, self.uuid.bytes, uuid.bytes, False),(SERVER_IP, SERVER_PORT)) #暂时解决丢包问题,但不完全
         print("打洞成功")
 
 
@@ -155,7 +148,6 @@ class Run:
                 except Exception:
                     traceback.print_exc()
                     return
-                print(f"收到交换信息请求{data}")
                 if self.gogogo_thread_count >= 5:  #控制打洞线程数量
                     # 更新对方客户端信息
                     self.info[uuid] = info
@@ -192,19 +184,3 @@ class Run:
                 try:
                     self.gogogo_thread_list.remove(current_thread())
                 except:pass
-
-
-    def client_session(self):
-        print("client_session")
-        #会话保持,防止端口发生变化
-        while True:
-            try:
-                if not self.info:
-                    time.sleep(9)
-                    continue
-                for info_item in self.info.values():  #标记,只增不减有一定程度内存泄漏,但不影响,后续有空再处理
-                    self.sock.sendto(Detection.encode("utf-8"), (info_item["ip"], info_item["port"]))
-            except:pass
-            time.sleep(9)
-
-

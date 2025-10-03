@@ -31,6 +31,7 @@ class Run:
             "port": -1
         }
         self.uuid = None #自己的uuid
+        self.stop=False
         self.yes = False #打洞是否成功
         #打洞管理
         self.gogogo_thread_count = 0
@@ -47,15 +48,19 @@ class Run:
 
         self.uuid_init()#uuid初始化
         #启动工作线程
-        self.server_session_thread = Thread(target=self.server_session,daemon=True)
-        self.recv_handle_thread = Thread(target=self.recv_handle,daemon=True)
+        self.server_session_thread = Thread(target=self.server_session)
+        self.recv_handle_thread = Thread(target=self.recv_handle)
         self.server_session_thread.start()
         self.recv_handle_thread.start()
         self.recv_handle_thread.join() #这个线程结束就说明打洞完成或失败了
+        if self.stop:
+            print("程序退出: 打洞失败")
+            quit()
+        elif self.yes:
+            print("程序继续: 打洞成功")
 
 
     def uuid_init(self):
-        print("uuid_init")
         while True:
             self.sock.sendto(struct.pack(HEADER_FMT, TYPE_GET_UUID, b"", b"", False), (SERVER_IP, SERVER_PORT)) #uuid可以在本地创建,但当时脑抽让去服务器要了
             try:
@@ -64,31 +69,26 @@ class Run:
                 time.sleep(1)
                 continue
             self.uuid = UUID(bytes=data)
-            print(self.uuid)
+            print(f"这是你的uuid: {self.uuid} 是区分你和其他客户端的东西")
             break
 
 
     def server_session(self):
-        print("server_session")
-        while not self.yes: #打洞完成不再请求
+        while not self.yes and not self.stop: #打洞完成不再请求
             self.sock.sendto(struct.pack(HEADER_FMT,TYPE_P2P,self.uuid.bytes,self.s_uuid.bytes,False), (SERVER_IP, SERVER_PORT))
             time.sleep(1)
         self.sock.sendto(struct.pack(HEADER_FMT, TYPE_CLOSE, self.uuid.bytes, self.s_uuid.bytes, False),(SERVER_IP, SERVER_PORT))
-        time.sleep(0.1)
-        self.sock.sendto(struct.pack(HEADER_FMT, TYPE_CLOSE, self.uuid.bytes, self.s_uuid.bytes, False),(SERVER_IP, SERVER_PORT)) #暂时解决丢包问题,但不完全
-        print("打洞成功")
 
 
     def recv_handle(self):
-        print("recv_handle")
         while not self.yes:
             try:
                 self.sock.setblocking(True)
                 data, addr = self.sock.recvfrom(1024)
                 data = data.decode("utf-8")
                 if data=="no": #服务器找不到打洞对象的注册会返回
-                    print("打洞失败")
-                    quit()
+                    self.stop=True
+                    return
                 header = data.split("&")[0]
                 uuid = UUID(data.split("&")[1])
                 if header == Detection:  # 探测头,表示对方客户端找到你了
@@ -102,7 +102,6 @@ class Run:
                     self.yes = True #打洞成功状态
                     self.client_session_thread = Thread(target=self.client_session) #心跳线程
                     self.client_session_thread.start()
-                    time.sleep(0.5)
                     self.clear_udp_buffer() #清理延迟到的包
 
                 elif header == "server_ok":  # 服务器消息头,对端数据交换
@@ -125,8 +124,8 @@ class Run:
                         with self._gogogo_lock:
                             self.gogogo_thread_list.append(t)
                         t.start()
-            except Exception as e:
-                traceback.print_exc()
+            except Exception: #pass
+                traceback.print_exc() #recvfrom一定会报错,觉得碍眼可以注释,用于调试
 
 
     def client_session(self):
@@ -136,7 +135,7 @@ class Run:
 
 
     def gogogo(self):
-        print(f"gogogo{self.gogogo_thread_count}")
+        print(f"gogogo线程数:{self.gogogo_thread_count}")
         try:
             self.gogogo_thread_count += 1  # 开始一个线程数量＋1
             for i in range(COUNT):

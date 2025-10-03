@@ -17,30 +17,23 @@ def gen_uuid():
     return uuid4()
 
 server_conn={}
-conn_count=0
+
 
 class Server:
     def __init__(self):
+        self.conn_count=0
         self.session_count = 0
         self.IP = "0.0.0.0"
         self.PORT = 3336
-        self.client1 = {
-            "uuid": "",
-            "ip": "",
-            "port": -1
-        }
-        self.client2 = {
-            "uuid": "",
-            "ip": "",
-            "port": -1
-        }
+        # {"uuid":"","ip":"","port":0}
+        self.client1 = {}
+        self.client2 = {}
         self.sock = socket(AF_INET, SOCK_DGRAM)
         self.sock.bind((self.IP, self.PORT))
         print("服务器启动")
         self.run()
 
     def run(self):
-        global conn_count
         while True:
             try:
                 data, addr = self.sock.recvfrom(1024)
@@ -61,29 +54,42 @@ class Server:
             elif t==TYPE_P2P: #P2P类请求
                 if f: #注册新服务端槽位,仅注册
                     print(f"{u1}注册请求")
-                    conn_count+=1
+                    self.conn_count+=1
                     s=socket(AF_INET, SOCK_STREAM)
                     s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-                    s.bind((self.IP, self.PORT+conn_count))
+                    try:
+                        s.bind((self.IP, self.PORT+self.conn_count))
+                    except:
+                        print("注册失败,端口被占用")
+                        continue
                     s.listen(1)
-                    Thread(target=self.sign,args=(u1,s)).start()
-                    Thread(target=self.logout_timeout,args=(u1,)).start()
-                    self.sock.sendto(f"{self.PORT+conn_count}".encode("utf-8"), addr)
+                    s.settimeout(5)
+                    Thread(target=self.sign,args=(u1,s),daemon=True).start()
+                    Thread(target=self.logout_timeout,args=(u1,),daemon=True).start()
+                    self.sock.sendto(f"{self.PORT+self.conn_count}".encode("utf-8"), addr)
 
                 elif self.session_count==0: #没有人打洞,可以使用
-                    print(f"{u1}向请求打洞{u2}")
+                    print(f"{u1}向{u2}请求打洞")
                     self.session_count=1
                     self.client1["uuid"]=u1
                     self.client1["ip"] = addr[0]
                     self.client1["port"] = addr[1]
                     if u2 in server_conn.keys(): #服务端存在,唤醒服务端
-                        print("尝试唤醒")
-                        server_conn[u2].send(u1.bytes)
+                        print(f"尝试唤醒{u2}")
+                        try:
+                            server_conn[u2].send(u1.bytes)
+                        except:
+                            self.sock.sendto("no".encode("utf-8"), addr)
+                            self.sock.sendto(struct.pack(HEADER_FMT, TYPE_LOGOUT, u1.bytes, b"", False),("127.0.0.1", 3336))
+                            print(f"请求的服务端{u2}关闭连接")
+                            self.client1 = {}
+                            self.session_count = 0
+                            continue
                         self.sock.sendto(f"server_ok&{u2}&{'{}'}".encode("utf-8"), addr)
-                        Thread(target=self.clear_session_timeout).start()
+                        Thread(target=self.clear_session_timeout,daemon=True).start()
                     else: #服务端不存在,不打洞
-                        print("请求的服务端不存在")
                         self.sock.sendto("no".encode("utf-8"), addr)
+                        print(f"请求的服务端{u2}不存在")
                         self.client1 = {}
                         self.session_count = 0
                         continue
@@ -120,11 +126,11 @@ class Server:
 
             elif t==TYPE_LOGOUT: #服务端注销请求
                 try:
-                    tcp = server_conn[u1]
-                    tcp.close()
+                    s = server_conn[u1]
+                    s.close()
                     del server_conn[u1]
                 except:pass
-                conn_count-=1
+                self.conn_count-=1
                 print(f"服务{u1}注销")
 
             elif t==TYPE_GET_UUID: #获取uuid
@@ -133,7 +139,10 @@ class Server:
 
 
     def sign(self,uuid,sock): #注册功能
-        s,addr=sock.accept()
+        try:
+            s,addr=sock.accept()
+        except:
+            return
         server_conn[uuid] = s
         print(f"服务{uuid}注册成功")
 
@@ -151,19 +160,13 @@ class Server:
 
     def clear_session_timeout(self):
         time.sleep(20)
-        print("会话清理")
-        s=socket(AF_INET,SOCK_DGRAM)
-        s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-        s.bind(("127.0.0.1", 3340))
-        s.sendto(struct.pack(HEADER_FMT, TYPE_CLOSE, b"", b"", False),("127.0.0.1", 3336))
+        print("清理会话")
+        self.sock.sendto(struct.pack(HEADER_FMT, TYPE_CLOSE, b"", b"", False),("127.0.0.1", 3336))
 
 
     def logout_timeout(self,uuid):
-        time.sleep(60)
-        s = socket(AF_INET, SOCK_DGRAM)
-        s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-        s.bind(("127.0.0.1", 3341))
-        s.sendto(struct.pack(HEADER_FMT, TYPE_LOGOUT, uuid.bytes, b"", False), ("127.0.0.1", 3336))  # 暂时解决丢包问题,但不完全
+        time.sleep(120)
+        self.sock.sendto(struct.pack(HEADER_FMT, TYPE_LOGOUT, uuid.bytes, b"", False), ("127.0.0.1", 3336))  # 暂时解决丢包问题,但不完全
 
 
 if __name__ == "__main__":
