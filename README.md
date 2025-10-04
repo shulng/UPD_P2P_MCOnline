@@ -1,20 +1,20 @@
 # MC打洞联机
 
-本项目用于实现 **Minecraft 联机打洞穿透**，通过 P2P 技术实现 NAT 穿透，客户端和服务端通过配置对应端口和 UUID 建立连接。
+本项目用于实现 **Minecraft 打洞联机**，通过 P2P 技术实现 NAT 穿透，客户端和服务端通过配置对应端口和 UUID 建立连接。
 
 ---
 
 ## 📂 项目文件
 
-- `p2p_server22.py` —— 打洞服务端脚本,启动以打洞,部署在公网服务器上  
+- `p2p_server.py` —— 打洞服务端脚本,部署在公网服务器上  **启动文件**
 - `p2p_client_s.py` —— MC服务端代理的打洞功能文件  
 - `p2p_client.py` —— MC客户端代理的打洞功能文件  
-- `服务端代理.py` —— 运行后会生成 `UUID` 并代理本地服务器端mc的默认25565端口,端口可自行修改
-- `客户端代理.py`  —— 客户端本地代理,运行前修改对应 `UUID` 启动即可连接打洞,默认监听25566端口,可在mc多人游戏输入0.0.0.0:25566联机
+- `服务端代理.py` —— 并代理本地服务器端mc的默认25565端口,端口可自行修改 **启动文件**
+- `客户端代理.py`  —— 客户端本地代理,运行前修改对应 `UUID` 启动即可连接打洞,默认监听25566端口,可在mc多人游戏输入0.0.0.0:25566联机 **启动文件**
 
 ---
 
-## ⚙️ 打洞服务端（p2p_server22.py）
+## ⚙️ 打洞服务端（p2p_server.py）
 
 ```python
 from socket import *
@@ -44,6 +44,9 @@ class Server:
         self.session_count = 0
         self.IP = "0.0.0.0"
         self.PORT = 3336   # 打洞服务器监听端口,修改这里
+```
+```bash
+python3 p2p_server.py
 ```
 
 ---
@@ -79,7 +82,6 @@ SERVER_PORT = 3336   # 必须与服务端一致,修改这里
 ---
 
 ##  ⚙️ MC客户端代理的打洞功能文件（p2p_client.py）
-
 ```python
 import traceback
 from socket import *
@@ -103,15 +105,12 @@ Detection = "okgo"
 # 网络信息
 SERVER_IP = "penxia.dpdns.org"
 SERVER_PORT = 3336   # 与服务端端口一致,修改这里
-
 ```
 
 ---
 
 # 🔑 代理配置
 ## 服务端代理（服务端代理.py）
-# 运行后会生成一个 UUID，客户端需要使用此 UUID 进行连接。
-
 ```python
 # relay.py
 import time
@@ -120,18 +119,21 @@ import socket
 import threading
 import struct
 import traceback
+from uuid import UUID
 import p2p_client_s
 
 Detection=p2p_client_s.Detection.encode("utf-8")
-p2pExample=p2p_client_s.Run()
+p2pExample=p2p_client_s.Run(UUID("60273221-458b-45be-9cb4-85f8db047c51")) #设置uuid
 
 # 配置（按需修改）
 MC_SERVER_ADDR = ('127.0.0.1', 25565)  # 真实 Minecraft 服务器地址,修改这里代理不同服务器端口
 ```
+```cmd
+# 与p2p_client_s.py同级目录
+python 服务端代理.py
+```
 
 ---
-
-
 
 ## 客户端代理（客户端代理.py）
 
@@ -148,19 +150,18 @@ import p2p_client
 Detection = p2p_client.Detection.encode("utf-8")
 
 # 在此处修改 UUID 为服务端代理提供的 UUID
-p2pExample = p2p_client.Run(UUID("d1585c38-8f6f-4ff6-96ee-97eb3b413619")) #修改这里
-if not p2pExample.yes:
-    quit()
+p2pExample = p2p_client.Run(UUID("d1585c38-8f6f-4ff6-96ee-97eb3b413619")) #填入和服务端代理.py相同的uuid
 
 # 配置（按需修改）
 LOCAL_TCP_BIND = ('0.0.0.0', 25566)   # Minecraft 客户端连到这里
-
+```
+```cmd
+# 与p2p_client.py同级目录
+python 客户端代理.py
 ```
 
 ---
 
 ## 👉 注意：
 
-# UUID 需要替换为服务端生成的真实值。
-
-# 确保客户端和服务端端口一致，否则无法打洞成功。
+# 默认ip是我的服务器,虽然可以随便用,但可能随时跑路,有条件9.9自己买个还能干其他事
