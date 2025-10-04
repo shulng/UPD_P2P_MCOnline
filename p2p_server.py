@@ -53,7 +53,7 @@ class Server:
                 continue
             elif t==TYPE_P2P: #P2P类请求
                 if f: #注册新服务端槽位,仅注册
-                    print(f"{u1}注册请求")
+                    print(f"{u1}请求注册")
                     self.conn_count+=1
                     s=socket(AF_INET, SOCK_STREAM)
                     s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
@@ -165,8 +165,8 @@ class Server:
 
 
     def logout_timeout(self,uuid):
-        time.sleep(120)
-        self.sock.sendto(struct.pack(HEADER_FMT, TYPE_LOGOUT, uuid.bytes, b"", False), ("127.0.0.1", 3336))  # 暂时解决丢包问题,但不完全
+        time.sleep(240)
+        self.sock.sendto(struct.pack(HEADER_FMT, TYPE_LOGOUT, uuid.bytes, b"", False), ("127.0.0.1", 3336))  #超时注销
 
 
 if __name__ == "__main__":

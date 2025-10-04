@@ -106,7 +106,7 @@ class Run:
         while True:
             time.sleep(1)
             try:
-                self.tcp.settimeout(120) #发现tcp连接会莫名其妙断开而不知,设置重注册机制刷新连接
+                self.tcp.settimeout(240) #发现tcp连接会莫名其妙断开,重注册机制刷新连接
                 data=self.tcp.recv(1024)
                 if len(data)>3:
                     uuid=UUID(bytes=data)
@@ -177,10 +177,8 @@ class Run:
                     break
                 self.sock.sendto(f"{Detection}&{self.uuid}&".encode("utf-8"), (self.info[uuid]["ip"], self.info[uuid]["port"] + i))
         finally:
-            # 无论如何都要安全地更新状态和移除线程引用
             with self._gogogo_lock:
                 self.gogogo_thread_count -= 1
-                # 按对象移除，而不是 pop(0)
                 try:
                     self.gogogo_thread_list.remove(current_thread())
                 except:pass

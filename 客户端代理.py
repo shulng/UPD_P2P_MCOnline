@@ -117,6 +117,7 @@ def udp_recv_loop():
                             except: pass
                             with conns_lock:
                                 conns.pop((conn_id,uuid), None)
+                                msg_id_s.pop((conn_id,uuid), None)
                 else:
                     fragments.pop((conn_id, msg_id, uuid), None)
                     # print(f"没有找到 {conn_id} 的mc连接")
@@ -129,6 +130,7 @@ def udp_recv_loop():
                     except: pass
                     with conns_lock:
                         conns.pop((conn_id,uuid), None)
+                        msg_id_s.pop((conn_id,uuid), None)
                     print(f"[local] 收到 CLOSE for conn {conn_id}, 已关闭本地 TCP")
             elif t == TYPE_ACK:
                 with msg_lock:
@@ -150,13 +152,13 @@ def handle_client(conn_sock, client_addr, conn_id, uuid):
         while True:
             data = conn_sock.recv(65536)
             if not data:
-                # 客户端关闭，通知 Relay 关闭后端连接
-                time.sleep(0.3)
-                p2pExample.sock.sendto(struct.pack(HEADER_FMT, TYPE_CLOSE, conn_id, 0, 0, 0,uuid), RELAY_UDP_ADDR)
                 break
             send_fragmented(conn_id, data,uuid)
     except:pass
     finally:
+        # 客户端关闭，通知 Relay 关闭后端连接
+        time.sleep(0.3)
+        p2pExample.sock.sendto(struct.pack(HEADER_FMT, TYPE_CLOSE, conn_id, 0, 0, 0,uuid), RELAY_UDP_ADDR)
         try:
             conn_sock.close()
         except: pass

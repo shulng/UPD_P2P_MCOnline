@@ -62,8 +62,6 @@ def resend_loop():
                     p2pExample.sock.sendto(pkt, addr)
 
 
-
-
 def tcp_to_local_loop(conn_id, tcp_sock, udp_addr,uuid):
     msg_id_s[(conn_id,uuid)]=1
     try:
@@ -71,13 +69,13 @@ def tcp_to_local_loop(conn_id, tcp_sock, udp_addr,uuid):
             data = tcp_sock.recv(65536)
             # print("服务端发的包", data)
             if not data:
-                # 后端断开，通知 local 并清理
-                time.sleep(0.3)
-                p2pExample.sock.sendto(struct.pack(HEADER_FMT, TYPE_CLOSE, conn_id, 0, 0, 0,uuid), udp_addr)
                 break
             send_fragmented(conn_id, data, udp_addr, uuid)
     except :pass
     finally:
+        # 后端断开，通知 local 并清理
+        time.sleep(0.3)
+        p2pExample.sock.sendto(struct.pack(HEADER_FMT, TYPE_CLOSE, conn_id, 0, 0, 0,uuid), udp_addr)
         try:
             tcp_sock.close()
         except: pass
@@ -85,7 +83,6 @@ def tcp_to_local_loop(conn_id, tcp_sock, udp_addr,uuid):
             conns.pop((conn_id,uuid), None)
             msg_id_s.pop((conn_id,uuid), None)
         print(f"conn_id: {conn_id} 关闭")
-
 
 
 def udp_recv_loop():
@@ -142,12 +139,14 @@ def udp_recv_loop():
                         except:pass
                         with conns_lock:
                             conns.pop((conn_id,uuid), None)
+                            msg_id_s.pop((conn_id,uuid), None)
                         p2pExample.sock.sendto(struct.pack(HEADER_FMT, TYPE_CLOSE, conn_id, 0, 0, 0,uuid), src)
             elif t == TYPE_CLOSE:
                 fragments.pop((conn_id, msg_id, uuid), None)
                 # local 告知关闭，关闭后端 TCP
                 with conns_lock:
                     info = conns.pop((conn_id,uuid))
+                    msg_id_s.pop((conn_id,uuid), None)
                 if info:
                     try:
                         info['tcp'].close()
