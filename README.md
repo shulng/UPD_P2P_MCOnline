@@ -45,6 +45,7 @@ class Server:
         self.IP = "0.0.0.0"
         self.PORT = 3336   # 打洞服务器监听端口,修改这里
 ```
+
 ```bash
 python3 p2p_server.py
 ```
@@ -81,7 +82,8 @@ SERVER_PORT = 3336   # 必须与服务端一致,修改这里
 
 ---
 
-##  ⚙️ MC客户端代理的打洞功能文件（p2p_client.py）
+## ⚙️ MC客户端代理的打洞功能文件（p2p_client.py）
+
 ```python
 import traceback
 from socket import *
@@ -109,8 +111,10 @@ SERVER_PORT = 3336   # 与服务端端口一致,修改这里
 
 ---
 
-# 🔑 代理配置
+#  🔑代理配置
+
 ## 服务端代理（服务端代理.py）
+
 ```python
 # relay.py
 import time
@@ -128,6 +132,7 @@ p2pExample=p2p_client_s.Run(UUID("60273221-458b-45be-9cb4-85f8db047c51")) #设�
 # 配置（按需修改）
 MC_SERVER_ADDR = ('127.0.0.1', 25565)  # 真实 Minecraft 服务器地址,修改这里代理不同服务器端口
 ```
+
 ```cmd
 # 与p2p_client_s.py同级目录
 python 服务端代理.py
@@ -155,6 +160,7 @@ p2pExample = p2p_client.Run(UUID("d1585c38-8f6f-4ff6-96ee-97eb3b413619")) #填�
 # 配置（按需修改）
 LOCAL_TCP_BIND = ('0.0.0.0', 25566)   # Minecraft 客户端连到这里
 ```
+
 ```cmd
 # 与p2p_client.py同级目录
 python 客户端代理.py
@@ -162,6 +168,6 @@ python 客户端代理.py
 
 ---
 
-## 👉 注意：
+## 👉 注意:
 
 # 默认ip是我的服务器,虽然可以随便用,但可能随时跑路,有条件9.9自己买个还能干其他事
