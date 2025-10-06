@@ -21,7 +21,7 @@ TYPE_ACK   = 0x02
 TYPE_CLOSE = 0x05
 TYPE_P2P=0x10
 
-MAX_PAYLOAD = 1400  # 保守一点，避免超过UDP上限
+MAX_PAYLOAD = 15000 # 保守一点，避免超过UDP上限
 conns = {}
 pending   = {}
 fragments = {} #标记,只增不减,短时间内存泄漏不重不影响使用,后续再做处理
@@ -36,7 +36,12 @@ def send_fragmented(conn_id, data,addr,uuid):
         msg_id = msg_id_s[(conn_id,uuid)]
         msg_id_s[(conn_id,uuid)]= msg_id+1
     total = (len(data) + MAX_PAYLOAD - 1) // MAX_PAYLOAD
+    t=0 #MC/tp命令的优化,tp会发一个很大的包需要延时发送,提升不大但推荐用上
+    if total >11:
+        t=0.018
+        # t=0.025 #最慢,但最大限度避免重发
     for seq in range(total):
+        time.sleep(t)
         chunk = data[seq*MAX_PAYLOAD:(seq+1)*MAX_PAYLOAD]
         header = struct.pack(HEADER_FMT, TYPE_MC, conn_id, msg_id, seq, total,uuid)
         pkt = header + chunk
@@ -51,23 +56,30 @@ def resend_loop():
         time.sleep(0.05)
         now = time.time()
         with msg_lock:
-            if not pending:
-                continue
             for key, (pkt, addr, last) in list(pending.items()):
-                if now - last >0.5:
-                    del pending[key]
-                    del fragments[(key[0],key[1],key[3])]
-                    print("大于0.5s")
-                if now - last > 0.1:
+                if now - last > 1:
                     p2pExample.sock.sendto(pkt, addr)
+                    # print(key[0], key[1], key[2])
+                    pending[key] = (pkt, addr , now)
 
 
 def tcp_to_local_loop(conn_id, tcp_sock, udp_addr,uuid):
     msg_id_s[(conn_id,uuid)]=1
+    ################################
+    # last = time.time()
+    # count = 0
+    ##################################
+    MAX_RECV = 8 * 1024 * 1024
     try:
         while True:
-            data = tcp_sock.recv(65536)
-            # print("服务端发的包", data)
+            data = tcp_sock.recv(MAX_RECV)
+            ##############################################################
+            # now = time.time()
+            # diff = (now - last) * 1000  # 毫秒
+            # print(f"recv {len(data)} bytes, interval: {diff:.2f}ms")
+            # last = now
+            # count += 1
+            ###############################################################
             if not data:
                 break
             send_fragmented(conn_id, data, udp_addr, uuid)
@@ -132,7 +144,6 @@ def udp_recv_loop():
                     try:
                         info['tcp'].sendall(assembled)
                     except Exception:
-                        fragments.pop((conn_id, msg_id, uuid), None)
                         traceback.print_exc()
                         try:
                             info['tcp'].close()
@@ -142,7 +153,6 @@ def udp_recv_loop():
                             msg_id_s.pop((conn_id,uuid), None)
                         p2pExample.sock.sendto(struct.pack(HEADER_FMT, TYPE_CLOSE, conn_id, 0, 0, 0,uuid), src)
             elif t == TYPE_CLOSE:
-                fragments.pop((conn_id, msg_id, uuid), None)
                 # local 告知关闭，关闭后端 TCP
                 with conns_lock:
                     info = conns.pop((conn_id,uuid))
@@ -151,8 +161,18 @@ def udp_recv_loop():
                     try:
                         info['tcp'].close()
                     except: pass
-                print(f"conn_id: {conn_id} 关闭")
-
+                lst=[]
+                for k in fragments.keys():
+                    if (k[0],k[2]) == (conn_id,uuid):
+                        lst.append(k)
+                for k in lst:
+                    del fragments[k]
+                lst=[]
+                for k in pending.keys():
+                    if (k[0],k[3])==(conn_id,uuid):
+                        lst.append(k)
+                for k in lst:
+                    del pending[k]
             elif t==TYPE_P2P:
                 p2pExample.recv_handle(payload,src)
             elif t == TYPE_ACK:
@@ -182,6 +202,4 @@ if __name__ == "__main__":
     print("[relay] 启动 relay")
     threading.Thread(target=resend_loop, daemon=True).start()
     threading.Thread(target=cleanup_loop, daemon=True).start()
-    # for i in range(4):
-    #     threading.Thread(target=udp_recv_loop,daemon=True).start()
     udp_recv_loop()

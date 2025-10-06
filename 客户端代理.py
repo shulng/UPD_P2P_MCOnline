@@ -22,7 +22,7 @@ TYPE_MC = 0x01
 TYPE_ACK   = 0x02
 TYPE_CLOSE = 0x05
 
-MAX_PAYLOAD = 256  # 保守一点，避免超过UDP上限
+MAX_PAYLOAD = 512  # 保守一点，避免超过UDP上限
 
 tcp_listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 tcp_listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -37,6 +37,7 @@ completed_msgs = OrderedDict()
 conns_lock = threading.Lock()
 msg_lock = threading.Lock()
 completed_msgs_lock = threading.Lock()
+fragments_lock = threading.Lock()
 
 _next_conn_id = 1
 
@@ -59,17 +60,13 @@ def send_fragmented(conn_id, data,uuid):
 def resend_loop():
     """定时重发未确认分片"""
     while True:
-        time.sleep(0.05)
+        time.sleep(0.01)
         now = time.time()
         with msg_lock:
-            if not pending:
-                continue
             for key, (pkt, last) in list(pending.items()):
-                if now - last > 0.5:
-                    del pending[key]
-                    del fragments[key[0],key[1],key[3]]
-                if now - last > 0.1:  # 100ms 超时
+                if now - last > 0.44:  # 1600ms 超时
                     p2pExample.sock.sendto(pkt, RELAY_UDP_ADDR)
+                    pending[key] = (pkt, now)
 
 
 def gen_conn_id():
@@ -81,9 +78,13 @@ def gen_conn_id():
             _next_conn_id = 1
         return cid
 
-
+"""统一接收来自 Relay 的 UDP，按 conn_id 分发到对应 TCP socket"""
 def udp_recv_loop():
-    """统一接收来自 Relay 的 UDP，按 conn_id 分发到对应 TCP socket"""
+    ######################
+    size=0
+    last=time.time()
+    test={0:size,1:last}
+    ######################
     while True:
         try:
             data, addr = p2pExample.sock.recvfrom(60000)
@@ -91,6 +92,17 @@ def udp_recv_loop():
                 continue
             t, conn_id,msg_id,seq,total,uuid = struct.unpack(HEADER_FMT, data[:HEADER_SIZE])
             payload = data[HEADER_SIZE:]
+            ##################################
+            # if len(payload) == 15000:
+            #     test[0]+=len(payload)
+            test[0] += len(payload)
+            now = time.time()
+            if now-test[1]>10:
+                print(f"用时: {round(now-test[1],2)} 秒 接收大小: {round(test[0]/1024,2)} KB 接收速度: {round(test[0]//10/1024,2)} KB/秒")
+                # print(test[0])
+                test[0]=0
+                test[1]=now
+            ####################################
             with conns_lock:
                 sock = conns.get((conn_id,uuid))
             if t == TYPE_MC:
@@ -101,37 +113,53 @@ def udp_recv_loop():
                     if (conn_id,msg_id,uuid) in completed_msgs:
                         continue
                 if sock:
-                    buf = fragments.setdefault((conn_id,msg_id,uuid), {})
-                    buf[seq] = payload
-                    if len(buf) == total and all(i in buf for i in range(total)): #分片集齐,开始拼接
-                        assembled = b''.join(buf[i] for i in range(total))
-                        # print("接到服务端的包",assembled)
-                        fragments.pop((conn_id,msg_id,uuid), None)
-                        mark_completed((conn_id,msg_id,uuid))
-                        try:
-                            sock.sendall(assembled)
-                        except Exception:
-                            # 发送失败 -> 关闭该连接
+                    with fragments_lock:
+                        buf = fragments.setdefault((conn_id,msg_id,uuid), {})
+                        buf[seq] = payload
+                        if len(buf) == total and all(i in buf for i in range(total)): #分片集齐,开始拼接
+                            assembled = b''.join(buf[i] for i in range(total))
+                            # print("接到服务端的包",assembled)
+                            fragments.pop((conn_id,msg_id,uuid), None)
+                            mark_completed((conn_id,msg_id,uuid))
                             try:
-                                sock.close()
-                            except: pass
-                            with conns_lock:
-                                conns.pop((conn_id,uuid), None)
-                                msg_id_s.pop((conn_id,uuid), None)
+                                sock.sendall(assembled)
+                            except Exception:
+                                # 发送失败 -> 关闭该连接
+                                try:
+                                    sock.close()
+                                except: pass
+                                with conns_lock:
+                                    conns.pop((conn_id,uuid), None)
+                                    msg_id_s.pop((conn_id,uuid), None)
+                                p2pExample.sock.sendto(struct.pack(HEADER_FMT, TYPE_CLOSE, conn_id, 0, 0, 0, uuid),RELAY_UDP_ADDR)
                 else:
-                    fragments.pop((conn_id, msg_id, uuid), None)
+                    with fragments_lock:
+                        fragments.pop((conn_id, msg_id, uuid), None)
+                        p2pExample.sock.sendto(struct.pack(HEADER_FMT, TYPE_CLOSE, conn_id, 0, 0, 0, uuid), RELAY_UDP_ADDR)
                     # print(f"没有找到 {conn_id} 的mc连接")
 
             elif t == TYPE_CLOSE:
                 # Relay 告知后端关闭
-                if sock:
-                    try:
-                        sock.close()
-                    except: pass
-                    with conns_lock:
-                        conns.pop((conn_id,uuid), None)
-                        msg_id_s.pop((conn_id,uuid), None)
-                    print(f"[local] 收到 CLOSE for conn {conn_id}, 已关闭本地 TCP")
+                try:
+                    sock.close()
+                except: pass
+                with conns_lock:
+                    conns.pop((conn_id,uuid), None)
+                    msg_id_s.pop((conn_id,uuid), None)
+                with fragments_lock:
+                    lst=[]
+                    for k in fragments.keys():
+                        if k[0] == conn_id:
+                            lst.append(k)
+                    for k in lst:
+                        del fragments[k]
+                with msg_lock:
+                    lst = []
+                    for k in pending.keys():
+                        if (k[0], k[3]) == (conn_id, uuid):
+                            lst.append(k)
+                    for k in lst:
+                        del pending[k]
             elif t == TYPE_ACK:
                 with msg_lock:
                     if (conn_id, msg_id, seq ,uuid) in pending:
@@ -148,9 +176,17 @@ def mark_completed(msg_id):
 def handle_client(conn_sock, client_addr, conn_id, uuid):
     msg_id_s[(conn_id,uuid)] = 1
     print(f"[local] 新客户端 {client_addr} -> conn_id {conn_id}")
+    # last = time.time()
+    # count = 0
+    MAX_RECV = 8 * 1024 * 1024
     try:
         while True:
-            data = conn_sock.recv(65536)
+            data = conn_sock.recv(MAX_RECV)
+            # now = time.time()
+            # diff = (now - last) * 1000  # 毫秒
+            # print(f"recv {len(data)} bytes, interval: {diff:.2f}ms")
+            # last = now
+            # count += 1
             if not data:
                 break
             send_fragmented(conn_id, data,uuid)
